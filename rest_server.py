@@ -2,6 +2,9 @@
 from flask import Flask, jsonify, abort, request, make_response, url_for
 import os.path
 import json,random
+from pyspark.mllib.tree import RandomForest, RandomForestModel
+from pyspark.mllib.util import MLUtils
+
 app = Flask(__name__, static_url_path = "")
 last_rep = {}
 @app.errorhandler(400)
@@ -83,13 +86,12 @@ def get_last_rep():
 def create_rep():
     if not request.get_json():
         abort(400)
-    last_rep = request.get_json()
-    print last_rep
+    shot_obj = request.get_json()
     shot_probs = [.9, .6, .2, .5, .2, .05]
-    shot_obj = last_rep
-    #shot_obj = json.loads(last_rep.replace("u'",'"').replace("'",'"'))
-#{u'shotType': u'Type 1', u'time_id': 1500952518695, u'sensor_data': {u'acc_z': -0.28961142897605896, u'acc_y': -0.64209622144699097, u'acc_x': 0.065950259566307068}}
+    print shot_obj
+
     cls = int(shot_obj['shotType'].replace("Type ", ""))
+    shot_obj[shotType] = cls
     id = shot_obj['time_id']
     hit = random.random() < shot_probs[cls]
     sensor_data = shot_obj['sensor_data']
@@ -99,15 +101,42 @@ def create_rep():
     rot_x = sensor_data['rot_x'] 
     rot_y = sensor_data['rot_y'] 
     rot_z = sensor_data['rot_z'] 
-    last_rep['shotType'] = cls
+    shot_obj['shotType'] = cls
     last_rep['hit'] = hit
+    if cls == -1:
+        #Test shot
+        with open('last_rep.txt', 'w') as the_file:
+            the_file.write("{0}\n".format(last_rep))
+        with open('test_shot.txt', 'w') as the_file:
+            the_file.write("{0}  1:{1} 2:{2} 3:{3} 4:{4} 5:{5} 6:{6}\n".format(cls, acc_x, acc_y, acc_z, rot_x, rot_y, rot_z))
+        data_test = MLUtils.loadLibSVMFile(sc, "test_shot.txt")
+        predictions = model.predict(testData.map(lambda x: x.features))
+        print str(predictions.collect())
+    else:
+        #Training shot
+        with open('all_reps.txt', 'a') as the_file:
+            the_file.write("{0}  1:{1} 2:{2} 3:{3} 4:{4} 5:{5} 6:{6}\n".format(cls, acc_x, acc_y, acc_z, rot_x, rot_y, rot_z))
+
+
+    
+
+
     print "CLS: " + str(cls)
-    with open('last_rep.txt', 'w') as the_file:
-        the_file.write("{0}\n".format(last_rep))
-    with open('all_reps.txt', 'a') as the_file:
-        the_file.write("{0}  1:{1} 2:{2} 3:{3} 4:{4} 5:{5} 6:{6}\n".format(cls, acc_x, acc_y, acc_z, rot_x, rot_y, rot_z))
     return jsonify( { 'rep': make_public_rep(last_rep) } ), 201
+
+def train_model(train_filename):
+    # Load and parse the data file into an RDD of LabeledPoint.
+    trainingData= MLUtils.loadLibSVMFile(sc, train_filename)
+    # Train a RandomForest model.
+    #  Empty categoricalFeaturesInfo indicates all features are continuous.
+    #  Note: Use larger numTrees in practice.
+    #  Setting featureSubsetStrategy="auto" lets the algorithm choose.
+    model = RandomForest.trainClassifier(trainingData, numClasses=3, categoricalFeaturesInfo={},
+                                         numTrees=3, featureSubsetStrategy="auto",
+                                         impurity='gini', maxDepth=4, maxBins=32)
+    return model
 
 if __name__ == '__main__':
     last_rep = reps[0]
+    model = train_model('training_data.txt')
     app.run(debug = True, host='0.0.0.0')
