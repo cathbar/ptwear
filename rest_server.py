@@ -1,7 +1,7 @@
 #!flask/bin/python
 from flask import Flask, jsonify, abort, request, make_response, url_for
 import os.path
-
+import json,random
 app = Flask(__name__, static_url_path = "")
 last_rep = {}
 @app.errorhandler(400)
@@ -81,11 +81,31 @@ def get_last_rep():
 
 @app.route('/ptwear/api/v1.0/reps', methods = ['POST'])
 def create_rep():
-    if not request.json :
+    if not request.get_json():
         abort(400)
     last_rep = request.get_json()
+    print last_rep
+    shot_probs = [.9, .6, .2, .5, .2, .05]
+    shot_obj = last_rep
+    #shot_obj = json.loads(last_rep.replace("u'",'"').replace("'",'"'))
+#{u'shotType': u'Type 1', u'time_id': 1500952518695, u'sensor_data': {u'acc_z': -0.28961142897605896, u'acc_y': -0.64209622144699097, u'acc_x': 0.065950259566307068}}
+    cls = int(shot_obj['shotType'].replace("Type ", ""))
+    id = shot_obj['time_id']
+    hit = random.random() < shot_probs[cls]
+    sensor_data = shot_obj['sensor_data']
+    acc_x = sensor_data['acc_x'] 
+    acc_y = sensor_data['acc_y'] 
+    acc_z = sensor_data['acc_z'] 
+    rot_x = sensor_data['rot_x'] 
+    rot_y = sensor_data['rot_y'] 
+    rot_z = sensor_data['rot_z'] 
+    last_rep['shotType'] = cls
+    last_rep['hit'] = hit
+    print "CLS: " + str(cls)
     with open('last_rep.txt', 'w') as the_file:
-        the_file.write(str(last_rep))
+        the_file.write("{0}\n".format(last_rep))
+    with open('all_reps.txt', 'a') as the_file:
+        the_file.write("{0}  1:{1} 2:{2} 3:{3} 4:{4} 5:{5} 6:{6}\n".format(cls, acc_x, acc_y, acc_z, rot_x, rot_y, rot_z))
     return jsonify( { 'rep': make_public_rep(last_rep) } ), 201
 
 if __name__ == '__main__':
